@@ -1,1 +1,123 @@
+smsurv <-function(Time,Status,X,beta,w,model){    
+  death_point <- sort(unique(subset(Time, Status==1)))
+  if(model=='ph') coxexp <- exp((beta)%*%t(X[,-1]))  
+  lambda <- numeric()
+  event <- numeric()
+  for(i in 1: length(death_point)){
+    event[i] <- sum(Status*as.numeric(Time==death_point[i]))
+    if(model=='ph')  temp <- sum(as.numeric(Time>=death_point[i])*w*drop(coxexp))
+    if(model=='aft')  temp <- sum(as.numeric(Time>=death_point[i])*w)
+    temp1 <- event[i]
+    lambda[i] <- temp1/temp
+  }
+  HHazard <- numeric()
+  for(i in 1:length(Time)){
+    HHazard[i] <- sum(as.numeric(Time[i]>=death_point)*lambda)
+    if(Time[i]>max(death_point))HHazard[i] <- Inf
+    if(Time[i]<min(death_point))HHazard[i] <- 0
+  }
+  survival <- exp(-HHazard)
+  list(survival=survival)
+}
+
+
+#### Decision tree classifier
+em.dt.RC <-function(Time,Status,X,Z,offsetvar,uncureprob,beta,emmax,eps,data) # considering proportional hazards structure
+{     
+  w <- Status
+  n <- length(Status)
+  s <- smsurv(Time,Status,X,beta,w,model="ph")$survival
+  convergence<- 1000;i <-1
+  while (convergence > eps & i < emmax){ 
+
+    survival<-drop(s^(exp((beta)%*%t(X[,-1]))))
+    ## E step 
+    w <- Status+(1-Status)*(uncureprob*survival)/((1-uncureprob)+uncureprob*survival)
+    ## M step. 
+    multipleuncureprob=matrix(1:5*n, nrow=n,ncol=5)
+    for (j in 1:n){multipleuncureprob[j,]<-rbinom(5,size = 1,prob=w[j])}
+    uncureprob1<-c(1,1)
+    uncureprob2<-c(1,1)
+    uncureprob3<-c(1,1)
+    uncureprob4<-c(1,1)
+    uncureprob5<-c(1,1)
+    for (j in 1:n){uncureprob1[j]=multipleuncureprob[j,1]}
+    for (j in 1:n){uncureprob2[j]=multipleuncureprob[j,2]}
+    for (j in 1:n){uncureprob3[j]=multipleuncureprob[j,3]}
+    for (j in 1:n){uncureprob4[j]=multipleuncureprob[j,4]}
+    for (j in 1:n){uncureprob5[j]=multipleuncureprob[j,5]}
+    for (j in 1:n){uncureprob1[j]=uncureprob1[j]}
+    for (j in 1:n){uncureprob2[j]=uncureprob2[j]}
+    for (j in 1:n){uncureprob3[j]=uncureprob3[j]}
+    for (j in 1:n){uncureprob4[j]=uncureprob4[j]}
+    for (j in 1:n){uncureprob5[j]=uncureprob5[j]}
+    uncureprob1<-as.factor(uncureprob1)
+    uncureprob2<-as.factor(uncureprob2)
+    uncureprob3<-as.factor(uncureprob3)
+    uncureprob4<-as.factor(uncureprob4)
+    uncureprob5<-as.factor(uncureprob5)
+    update_cureb<-c(1,1)
+    
+    daata=data.frame(uncureprob1,Z[,-1])
+    obj3 <- tune.rpart(uncureprob1~z1+z3+z4+z5, data = daata, minsplit =seq(5,15,5),cp = seq(0.00,0.012,0.05))
+    bc<-obj3$best.parameters[1]  
+    bg<-obj3$best.parameters[2]
+    
+    mod1 <- rpart(formula = uncureprob1~z1+z2+z3+z4+z5, data = data,method = "class",control = rpart.control(minsplit = bc[[1]],minbucket = round(bc[[1]]/3), cp = bg[[1]]),xval = 10,parms = list(split="gini"))
+    cp.min1 <- min(mod1$cptable[mod1$cptable[, "xerror"] <= min(mod1$cptable[, "xerror"]) + sd(mod1$cptable[, "xerror"]), "CP"])
+    tree1<-prune(mod1, cp=cp.min1)
+    proba1 <- predict(tree1, newdata = data,type = "prob")
+    update_cureb1<-c(1,1)
+    for (z in 1:n){update_cureb1[z]<-proba1[z,colnames(proba1)==1]}
+    uncureprob1<-as.numeric(as.character(uncureprob1))
+    
+    mod2 <- rpart(formula = uncureprob2~z1+z2+z3+z4+z5, data = data,method = "class",control = rpart.control(minsplit = bc[[1]],minbucket = round(bc[[1]]/3), cp = bg[[1]]),xval = 10,parms = list(split="gini"))
+    cp.min2 <- min(mod2$cptable[mod2$cptable[, "xerror"] <= min(mod2$cptable[, "xerror"]) + sd(mod2$cptable[, "xerror"]), "CP"])
+    tree2<-prune(mod2, cp=cp.min2)
+    proba2 <- predict(tree2, newdata = data,type = "prob")
+    update_cureb2<-c(1,1)
+    for (z in 1:n){update_cureb2[z]<-proba2[z,colnames(proba2)==1]}
+    uncureprob2<-as.numeric(as.character(uncureprob2))
+    
+    mod3 <- rpart(formula = uncureprob3~z1+z2+z3+z4+z5, data = data,method = "class",control = rpart.control(minsplit = bc[[1]],minbucket = round(bc[[1]]/3), cp = bg[[1]]),xval = 10,parms = list(split="gini"))
+    cp.min3 <- min(mod3$cptable[mod3$cptable[, "xerror"] <= min(mod3$cptable[, "xerror"]) + sd(mod3$cptable[, "xerror"]), "CP"])
+    tree3<-prune(mod3, cp=cp.min3)
+    proba3 <- predict(tree3, newdata = data,type = "prob")
+    update_cureb3<-c(1,1)
+    for (z in 1:n){update_cureb3[z]<-proba3[z,colnames(proba3)==1]}
+    uncureprob3<-as.numeric(as.character(uncureprob3))
+    
+    mod4 <- rpart(formula = uncureprob4~z1+z2+z3+z4+z5, data = data,method = "class",control = rpart.control(minsplit = bc[[1]],minbucket = round(bc[[1]]/3), cp = bg[[1]]),xval = 10,parms = list(split="gini"))
+    cp.min4 <- min(mod4$cptable[mod4$cptable[, "xerror"] <= min(mod4$cptable[, "xerror"]) + sd(mod4$cptable[, "xerror"]), "CP"])
+    tree4<-prune(mod4, cp=cp.min4)
+    proba4 <- predict(tree4, newdata = data,type = "prob")
+    update_cureb4<-c(1,1)
+    for (z in 1:n){update_cureb4[z]<-proba4[z,colnames(proba4)==1]}
+    uncureprob4<-as.numeric(as.character(uncureprob4))
+    
+    mod5 <- rpart(formula = uncureprob5~z1+z2+z3+z4+z5, data = data,method = "class",control = rpart.control(minsplit = bc[[1]],minbucket = round(bc[[1]]/3), cp = bg[[1]]),xval = 10,parms = list(split="gini"))
+    cp.min5 <- min(mod5$cptable[mod5$cptable[, "xerror"] <= min(mod5$cptable[, "xerror"]) + sd(mod5$cptable[, "xerror"]), "CP"])
+    tree5<-prune(mod5, cp=cp.min5)
+    proba5 <- predict(tree5, newdata = data,type = "prob")
+    update_cureb5<-c(1,1)
+    for (z in 1:n){update_cureb5[z]<-proba5[z,colnames(proba5)==1]}
+    uncureprob5<-as.numeric(as.character(uncureprob5))
+    
+    for (z in 1:n){update_cureb[z]<-(update_cureb1[z]+update_cureb2[z]+update_cureb3[z]+update_cureb4[z]+update_cureb5[z])/5}
+       
+    update_beta <- coxph(Surv(Time, Status)~X[,-1]+offset(log(w)),subset=w!=0, method="breslow")$coef
+    update_s <-smsurv(Time,Status,X,beta,w,model="ph")$survival
+    
+    convergence<-sum(c(mean(update_cureb)-mean(uncureprob),update_beta-beta,mean(update_s)-mean(s))^2)
+    uncureprob <- update_cureb
+    beta <- update_beta 
+   
+    s<-update_s
+    
+    i <- i+1
+  }
+  S1 = drop(s^(exp((beta)%*%t(X[,-1])))) # survival function of susceptible group
+  Sp = (1-uncureprob)+(uncureprob*S1)
+  em.dt <- list(latencyfit=beta,Uncureprob=uncureprob,S0=s,S1=S1,Sp=Sp,tau=convergence,Tree1=tree1, Mod1=mod1, Mod2=mod2, Mod3=mod3, Mod4=mod4, Mod5=mod5)
+}
 
