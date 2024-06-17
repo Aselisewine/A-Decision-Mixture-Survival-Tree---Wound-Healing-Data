@@ -25,7 +25,10 @@ smsurv <-function(Time,Status,X,beta,w,model){
 }
 
 
-#### Decision tree classifier
+library(rpart)
+
+#A2. The Decision trees-based EM algorithm to estimate the model parameters and different quantities of interest.
+
 em.dt.RC <-function(Time,Status,X,Z,offsetvar,uncureprob,beta,emmax,eps,data) # considering proportional hazards structure
 {     
   w <- Status
